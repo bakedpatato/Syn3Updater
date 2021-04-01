@@ -129,7 +129,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
 
             _fileHelper = new FileHelper(PercentageChanged);
 
-            _downloadTask = Task.Run(DoDownload, _tokenSource.Token).ContinueWith(async t =>
+            _downloadTask =  DoDownload().ContinueWith(async t =>
            {
                if (t.IsFaulted)
                {
@@ -157,7 +157,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     return;
                 }
 
-                if (await ValidateFile(item.Url, ApplicationManager.Instance.DownloadPath + item.FileName, item.Md5, false, true))
+                if (await Task.Run(() => ValidateFile(item.Url, ApplicationManager.Instance.DownloadPath + item.FileName, item.Md5, false, true)))
                 {
                     string text = $"Validated: {item.FileName} (Skipping Download)";
                     Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
@@ -208,7 +208,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                                 break;
                             }
 
-                            if (await ValidateFile(item.Url, ApplicationManager.Instance.DownloadPath + item.FileName, item.Md5, false))
+                            if (await Task.Run(() => ValidateFile(item.Url, ApplicationManager.Instance.DownloadPath + item.FileName, item.Md5, false)))
                             {
                                 text = $"Downloaded: {item.FileName}";
                                 Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
@@ -303,8 +303,8 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     _count++;
                     continue;
                 }
-                if (await ValidateFile(ApplicationManager.Instance.DownloadPath + item.FileName, $@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5,
-                    true, true))
+                if (await Task.Run(() => ValidateFile(ApplicationManager.Instance.DownloadPath + item.FileName, $@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5,
+                    true, true)))
                 {
                     string text = $"{item.FileName} exists and validated successfully, skipping copy";
 
@@ -361,8 +361,8 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                             CancelAction();
                         }
 
-                        if (await ValidateFile(ApplicationManager.Instance.DownloadPath + item.FileName,
-                            $@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5, true))
+                        if (await Task.Run(() =>  ValidateFile(ApplicationManager.Instance.DownloadPath + item.FileName,
+                            $@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5, true)))
                         {
                             text = $"Copied: {item.FileName}";
                             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
