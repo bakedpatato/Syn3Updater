@@ -74,5 +74,8 @@
 			<Install>false</Install>
 		</BootstrapperPackage>
 	</ItemGroup>
+	<ItemGroup>
+	  <ProjectReference Include="..\OctaneEngine\OctaneEngine.csproj" />
+	</ItemGroup>
 	<Import Project="..\SharedCode\SharedCode.projitems" Label="Shared" />
 </Project>

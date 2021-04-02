@@ -1,7 +1,7 @@
 ﻿using System;
 using System.IO;
-using System.Linq;
 using System.Net.Http;
+
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -10,6 +10,7 @@ using System.Windows;
 using Cyanlabs.Syn3Updater.Model;
 using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Tar;
+using OctaneDownloadEngine;
 
 namespace Cyanlabs.Syn3Updater.Helper
 {
@@ -103,86 +104,9 @@ namespace Cyanlabs.Syn3Updater.Helper
         /// <returns>bool with True if successful or False if not</returns>
         public async Task<bool> DownloadFile(string path, string filename, CancellationToken ct)
         {
-            Client = new HttpClient();
-            Client.DefaultRequestHeaders.UserAgent.TryParseAdd(ApplicationManager.Instance.Header);
 
-            using (HttpResponseMessage response = await Client.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, ct))
-            {
-                try
-                {
-                    long total = response.Content.Headers.ContentLength ?? -1L;
-                    bool canReportProgress = total != -1;
-
-                    using (Stream stream = await response.Content.ReadAsStreamAsync())
-                    {
-                        long totalRead = 0L;
-                        byte[] buffer = new byte[4096];
-                        bool moreToRead = true;
-                        const int chunkSize = 4096;
-                        using (FileStream fileStream = File.Create(filename, chunkSize))
-                        {
-                            try
-                            {
-                                do
-                                {
-                                    if (ct.IsCancellationRequested) return false;
-                                    int read = await stream.ReadAsync(buffer, 0, buffer.Length, ct);
-                                    if (read == 0)
-                                    {
-                                        moreToRead = false;
-                                        fileStream.Close();
-                                        fileStream.Dispose();
-                                    }
-                                    else
-                                    {
-                                        byte[] data = new byte[read];
-                                        buffer.ToList().CopyTo(0, data, 0, read);
-                                        await fileStream.WriteAsync(buffer, 0, read, ct);
-                                        totalRead += read;
-
-                                        if (!canReportProgress) continue;
-                                        double downloadPercentage = totalRead * 1d / (total * 1d) * 100;
-                                        int value = Convert.ToInt32(downloadPercentage);
-                                        _percentageChanged.Raise(this, value);
-                                    }
-                                } while (moreToRead);
-                            }
-                            catch (IOException ioException)
-                            {
-                                try
-                                {
-                                    if(File.Exists(filename)) File.Delete(filename);
-                                }
-                                catch (Exception)
-                                {
-                                    // ignored
-                                }
-                                Application.Current.Dispatcher.Invoke(() => ModernWpf.MessageBox.Show(
-                                    ioException.GetFullMessage(), "Syn3 Updater",
-                                    MessageBoxButton.OK,
-                                    MessageBoxImage.Exclamation));
-                                ApplicationManager.Logger.Info("ERROR: " + ioException.GetFullMessage());
-                                return false;
-                            }
-                            finally
-                            {
-                                fileStream.Close();
-                                fileStream.Dispose();
-                            }
-                        }
-                    }
-                }
-                catch (HttpRequestException webException)
-                {
-                    Application.Current.Dispatcher.Invoke(() => ModernWpf.MessageBox.Show(
-                        webException.GetFullMessage(), "Syn3 Updater",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Exclamation));
-                    ApplicationManager.Logger.Info("ERROR: " + webException.GetFullMessage());
-                    return false;
-                }
-            }
-            
+            var engine = new OctaneEngine();
+            await engine.DownloadFile(path, 2, filename);            
             return true;
         }
 
@@ -388,5 +312,7 @@ namespace Cyanlabs.Syn3Updater.Helper
             return outputResult;
         }
         #endregion
+
+     
     }
 }
