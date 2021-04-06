@@ -533,7 +533,7 @@ namespace OctaneDownloadEngine
             }
             catch (Exception ex)
             {           
-
+                
                 // Delete the tempfiles if there's an error
                 foreach (var piece in pieces)
                 {
@@ -543,6 +543,9 @@ namespace OctaneDownloadEngine
                     }
                     catch (FileNotFoundException)
                     {
+                    }
+                    catch {
+                        throw;
                     }
                 }
 

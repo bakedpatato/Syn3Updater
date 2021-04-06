@@ -1,7 +1,6 @@
 ﻿using System;
 using System.IO;
 using System.Net.Http;
-
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -64,7 +63,7 @@ namespace Cyanlabs.Syn3Updater.Helper
             byte[] bytes = new byte[bufferSize];
             int prevPercent = 0;
 
-            while ((bytesRead = await inStream.ReadAsync(bytes, 0, bufferSize)) > 0)
+            while ((bytesRead = await inStream.ReadAsync(bytes, 0, bufferSize,ct)) > 0)
             {
                 if (ct.IsCancellationRequested)
                 {
@@ -81,7 +80,7 @@ namespace Cyanlabs.Syn3Updater.Helper
                     return;
                 }
 
-                await fileStream.WriteAsync(bytes, 0, bytesRead);
+                await fileStream.WriteAsync(bytes, 0, bytesRead,ct);
                 totalReads += bytesRead;
                 int percent = Convert.ToInt32(totalReads / (decimal) totalBytes * 100);
                 if (percent != prevPercent)
@@ -91,11 +90,10 @@ namespace Cyanlabs.Syn3Updater.Helper
                 }
             }
         }
-
-        private static HttpClient Client;
+    
 
         /// <summary>
-        ///     Downloads file from URL to specified filename using HTTPClient with CancellationToken support
+        /// Downloads file from URL to specified filename using HTTPClient with CancellationToken support
         ///     <see href="https://www.technical-recipes.com/2018/reporting-the-percentage-progress-of-large-file-downloads-in-c-wpf/">See more</see>
         /// </summary>
         /// <param name="path">Source URL</param>
@@ -104,9 +102,8 @@ namespace Cyanlabs.Syn3Updater.Helper
         /// <returns>bool with True if successful or False if not</returns>
         public async Task<bool> DownloadFile(string path, string filename, CancellationToken ct)
         {
-
             var engine = new OctaneEngine();
-            await engine.DownloadFile(path, 2, filename);            
+            await engine.DownloadFile(path, 3, filename);        
             return true;
         }
 
