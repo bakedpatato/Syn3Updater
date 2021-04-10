@@ -103,7 +103,7 @@ namespace Cyanlabs.Syn3Updater.Helper
         public async Task<bool> DownloadFile(string path, string filename, CancellationToken ct)
         {
             var engine = new OctaneEngine();
-            await engine.DownloadFile(path, 3, filename);        
+            await engine.DownloadFile(path, 2, filename);        
             return true;
         }
 
