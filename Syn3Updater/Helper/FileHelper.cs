@@ -10,6 +10,8 @@ using Cyanlabs.Syn3Updater.Model;
 using ICSharpCode.SharpZipLib.GZip;
 using ICSharpCode.SharpZipLib.Tar;
 using OctaneDownloadEngine;
+using HttpRequestException = System.Net.Http.HttpRequestException;
+
 
 namespace Cyanlabs.Syn3Updater.Helper
 {
@@ -90,7 +92,8 @@ namespace Cyanlabs.Syn3Updater.Helper
                 }
             }
         }
-    
+
+        private static HttpClient _client;
 
         /// <summary>
         /// Downloads file from URL to specified filename using HTTPClient with CancellationToken support
@@ -309,6 +312,15 @@ namespace Cyanlabs.Syn3Updater.Helper
                 outputResult.Result = true;
             }
             return outputResult;
+        }
+        
+        //https://stackoverflow.com/questions/309485/c-sharp-sanitize-file-name
+        public static string MakeValidFileName( string name )
+        {
+            string invalidChars = System.Text.RegularExpressions.Regex.Escape( new string( System.IO.Path.GetInvalidFileNameChars() ) );
+            string invalidRegStr = string.Format( @"([{0}]*\.+$)|([{0}]+)", invalidChars );
+
+            return System.Text.RegularExpressions.Regex.Replace( name, invalidRegStr, "_" );
         }
         #endregion
 

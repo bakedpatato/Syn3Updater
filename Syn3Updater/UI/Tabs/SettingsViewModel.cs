@@ -5,7 +5,9 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
+using AsyncAwaitBestPractices.MVVM;
 using Cyanlabs.Syn3Updater.Helper;
 using Cyanlabs.Syn3Updater.Model;
 using Microsoft.VisualBasic.FileIO;
@@ -21,9 +23,9 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
     {
         #region Constructors
 
-        private ActionCommand _downloadPathSelector;
+        private AsyncCommand<string> _pathSelector;
         private ActionCommand _applySettings;
-        public ActionCommand DownloadPathSelector => _downloadPathSelector ??= new ActionCommand(DownloadPathAction);
+        public AsyncCommand<string> PathSelector => _pathSelector ??= new AsyncCommand<string>(SelectPathAction);
         public ActionCommand ApplySettings => _applySettings ??= new ActionCommand(ApplySettingsAction);
 
         #endregion
@@ -120,7 +122,22 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 {
                     SetProperty(ref _downloadLocation, value);
                     AppMan.App.DownloadPath = value;
-                    AppMan.App.Settings.DownloadPath = value;
+                    AppMan.App.MainSettings.DownloadPath = value;
+                }
+            }
+        }
+        
+        private string _logLocation;
+
+        public string LogLocation
+        {
+            get => _logLocation;
+            set
+            {
+                if (value != null)
+                {
+                    SetProperty(ref _logLocation, value);
+                    AppMan.App.MainSettings.LogPath = value;
                 }
             }
         }
@@ -149,7 +166,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 if (value != null)
                 {
                     SetProperty(ref _currentTheme, value);
-                    AppMan.App.Settings.Theme = value;
+                    AppMan.App.MainSettings.Theme = value;
                     if (value == "Dark")
                     {
                         ThemeManager.Current.ApplicationTheme = ApplicationTheme.Dark;
@@ -174,8 +191,8 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 if (_My20Mode == true && value == false)
                 {
                     if (ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20Detected"), "Syn3 Updater", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
-                        SetProperty(ref _My20Mode, value);
-                    AppMan.App.Settings.My20 = value;
+                        SetProperty(ref _My20Mode, false);
+                    AppMan.App.Settings.My20 = false;
                 }
                 else
                 {
@@ -183,10 +200,30 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     AppMan.App.Settings.My20 = value;
                     CurrentInstallMode = "autodetect";
                 }
-                InstallModesEnabled = !value;
+                InstallModesEnabled = !AppMan.App.Settings.My20;
             }
         }
 
+        private bool _advancedModeToggle;
+
+        public bool AdvancedModeToggle
+        {
+            get => _advancedModeToggle;
+            set
+            {
+                if (value)
+                {
+                    if (ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.AdvancedSettings"), "Syn3 Updater", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                        SetProperty(ref _advancedModeToggle, true);
+                } 
+                else
+                {
+                    SetProperty(ref _advancedModeToggle, false);
+                }
+                InstallModesEnabled = !AppMan.App.Settings.My20;
+            }
+        }
+        
         private bool _installModesEnabled;
 
         public bool InstallModesEnabled
@@ -208,7 +245,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 if (value != null)
                 {
                     SetProperty(ref _licenseKey, value);
-                    AppMan.App.Settings.LicenseKey = value;
+                    AppMan.App.MainSettings.LicenseKey = value;
                 }
             }
         }
@@ -224,7 +261,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 if (value != null)
                 {
                     SetProperty(ref _currentLanguage, value);
-                    AppMan.App.Settings.Lang = value;
+                    AppMan.App.MainSettings.Lang = value;
                     AppMan.App.FireLanguageChangedEvent();
                 }
             }
@@ -260,8 +297,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
         public void Init()
         {
             AppMan.App.FireHomeTabEvent();
-            //TODO Fix need for temp string
-            string currentRegionTemp = AppMan.App.Settings.CurrentRegion;
+
             SRegions = new ObservableCollection<SModel.SRegion>
             {
                 new SModel.SRegion {Code = "EU", Name = "Europe"},
@@ -270,41 +306,43 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 new SModel.SRegion {Code = "ANZ", Name = "Australia, New Zealand, South America, Turkey & Taiwan"},
                 new SModel.SRegion {Code = "ROW", Name = "Middle East, Africa, India, Sri Lanka, Israel, South East Asia, Caribbean and Central America"}
             };
-            CurrentRegion = currentRegionTemp;
 
-            //TODO Fix need for temp string
-            string currentInstallModeTemp = AppMan.App.InstallMode;
             InstallModes = new ObservableCollection<string>
             {
                 "autodetect", "autoinstall", "reformat", "downgrade"
             };
-            CurrentInstallMode = currentInstallModeTemp;
-
+            
             Themes = new ObservableCollection<string>
             {
                 "Dark", "Light"
             };
-            CurrentTheme = AppMan.App.Settings.Theme;
+            CurrentTheme = AppMan.App.MainSettings.Theme;
 
             ReleaseTypes = new ObservableCollection<LauncherPrefs.ReleaseType>
             {
-                LauncherPrefs.ReleaseType.Release,
+                LauncherPrefs.ReleaseType.Stable,
                 LauncherPrefs.ReleaseType.Beta,
-                LauncherPrefs.ReleaseType.Ci
+                LauncherPrefs.ReleaseType.Alpha
             };
-
-            ReleaseType = AppMan.App.LauncherPrefs.ReleaseBranch;
-            CurrentNav = AppMan.App.Settings.CurrentNav;
-            My20Mode = AppMan.App.Settings.My20;
+            
+            LogLocation = AppMan.App.MainSettings.LogPath;
+            LicenseKey = AppMan.App.MainSettings.LicenseKey;
+            CurrentLanguage = AppMan.App.MainSettings.Lang;
             DownloadLocation = AppMan.App.DownloadPath;
-            LicenseKey = AppMan.App.Settings.LicenseKey;
-            CurrentLanguage = AppMan.App.Settings.Lang;
+            
+            ReleaseType = AppMan.App.LauncherPrefs.ReleaseBranch;
         }
 
         public void ReloadSettings()
         {
+            //TODO Fix need for temp strings
+            string currentRegionTemp = AppMan.App.Settings.CurrentRegion;
+            CurrentRegion = currentRegionTemp;
+            string currentInstallModeTemp = AppMan.App.InstallMode;
+            CurrentInstallMode = currentInstallModeTemp;
+            
+            CurrentNav = AppMan.App.Settings.CurrentNav;
             CurrentVersion = AppMan.App.SVersion;
-            CurrentTheme = AppMan.App.Settings.Theme;
             My20Mode = AppMan.App.Settings.My20;
         }
 
@@ -338,9 +376,10 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             AppMan.App.SaveSettings();
         }
 
-        private void DownloadPathAction()
+        private async Task SelectPathAction(string type)
         {
-            string oldPath = AppMan.App.Settings.DownloadPath;
+            string oldPath = type == "downloads" ? AppMan.App.MainSettings.DownloadPath : AppMan.App.MainSettings.LogPath;
+            
             VistaFolderBrowserDialog dialog = new VistaFolderBrowserDialog();
             if (dialog.ShowDialog().GetValueOrDefault())
             {
@@ -352,15 +391,24 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     {
                         try
                         {
-                            foreach (var file in Directory.GetFiles(oldPath, "*.TAR.GZ"))
-                                FileSystem.MoveFile(file, Path.Combine(dialog.SelectedPath, Path.GetFileName(file)), UIOption.AllDialogs);
+                            if (type == "downloads")
+                            {
+                                foreach (var file in Directory.GetFiles(oldPath, "*.TAR.GZ"))
+                                    FileSystem.MoveFile(file, Path.Combine(dialog.SelectedPath, Path.GetFileName(file)), UIOption.AllDialogs);
+                                DownloadLocation = dialog.SelectedPath + "\\";
+                            }
+                            else
+                            {
+                                foreach (var file in Directory.GetFiles(oldPath, "*.txt"))
+                                    FileSystem.MoveFile(file, Path.Combine(dialog.SelectedPath, Path.GetFileName(file)), UIOption.AllDialogs);
+                                LogLocation = dialog.SelectedPath + "\\";
+                            }
                         }
                         catch (OperationCanceledException)
                         {
                             //TODO Catch better
                         }
                     }
-                DownloadLocation = dialog.SelectedPath + "\\";
             }
         }
         #endregion

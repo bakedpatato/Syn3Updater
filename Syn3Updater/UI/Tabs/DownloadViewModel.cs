@@ -179,8 +179,17 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                }
                finally
                {
-                   if (t.Exception != null) Application.Current.Dispatcher.Invoke(() => AppMan.Logger.CrashWindow(t.Exception.InnerExceptions.FirstOrDefault()));
-
+                   bool userError = false;
+                   if (t.Exception != null)
+                   {
+                       foreach (Exception exception in t.Exception.InnerExceptions)
+                       {
+                           if (exception.GetType().IsAssignableFrom(typeof(System.IO.IOException))) userError = true;
+                           break;
+                       }
+                       if (t.Exception != null && !userError) 
+                           Application.Current.Dispatcher.Invoke(() => AppMan.Logger.CrashWindow(t.Exception.InnerExceptions.FirstOrDefault()));
+                   }
                    CancelAction();
                }
            });
@@ -321,10 +330,8 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 }
             }
         }
-
-#pragma warning disable 1998
+        
         private async Task DoCopy()
-#pragma warning restore 1998
         {
             foreach (SModel.Ivsu extraitem in AppMan.App.ExtraIvsus)
             {
@@ -388,7 +395,8 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                                 webException.GetFullMessage(), "Syn3 Updater",
                                 MessageBoxButton.OK,
                                 MessageBoxImage.Exclamation));
-                            AppMan.Logger.Info("ERROR: " + webException.GetFullMessage());
+                            //Ignoring HttpRequestExceptions due to log spam from server disconnects etc.
+                            //AppMan.Logger.Info("ERROR: " + webException.GetFullMessage());
                             CancelAction();
                         }
                         catch (IOException ioException)
@@ -451,7 +459,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 CreateAutoInstall();
 
             CancelButtonEnabled = false;
-            string text = String.Empty;
+            string text;
             if (AppMan.App.DownloadToFolder)
             {
                 text = "ALL FILES DOWNLOADED AND COPIED TO THE SELECTED FOLDER SUCCESSFULLY!";
@@ -507,15 +515,22 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     USBHelper usbHelper = new USBHelper();
                     usbHelper.LogParseXmlAction().ConfigureAwait(false);
                     AppMan.App.UtilityCreateLogStep1Complete = true;
-                    if (AppMan.App.Settings.My20)
+                    if (!AppMan.App.Cancelled)
                     {
-                        AppMan.App.Settings.My20 = true;
-                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20Found"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                        if (AppMan.App.Settings.My20)
+                        {
+                            AppMan.App.Settings.My20 = true;
+                            ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20Found"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
+                        else
+                        {
+                            AppMan.App.Settings.My20 = false;
+                            ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20NotFound"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                        }
                     }
                     else
                     {
-                        AppMan.App.Settings.My20 = false;
-                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20NotFound"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20CheckCancelled"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Error);
                     }
                     AppMan.App.FireHomeTabEvent();
                 }

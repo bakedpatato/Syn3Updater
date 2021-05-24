@@ -55,12 +55,28 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
 
         private Visibility _updatedNoticeVisible;
 
-        public Visibility
-            UpdatedNoticeVisible
+        public Visibility UpdatedNoticeVisible
         {
             get => _updatedNoticeVisible;
             set => SetProperty(ref _updatedNoticeVisible, value);
         }
+
+        private Visibility _importantNoticesGrid;
+
+        public Visibility ImportantNoticesGrid
+        {
+            get => _importantNoticesGrid;
+            set => SetProperty(ref _importantNoticesGrid, value);
+        }
+        
+        private Visibility _otherNoticesGrid;
+
+        public Visibility OtherNoticesGrid
+        {
+            get => _otherNoticesGrid;
+            set => SetProperty(ref _otherNoticesGrid, value);
+        }
+
         #endregion
 
         #region Constructors
@@ -117,6 +133,9 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 else
                     OtherNotices = html + OtherNotices;
             }
+
+            OtherNoticesGrid = string.IsNullOrEmpty(OtherNotices) ? Visibility.Collapsed : Visibility.Visible;
+            ImportantNoticesGrid = ImportantNotices == "<style>h4 { margin:0px; } div { padding-bottom:10px;}</style>" ? Visibility.Collapsed : Visibility.Visible;
         }
 
         public async Task GetChangelog()
@@ -124,7 +143,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             Changelog = "Loading changelog, please wait...";
             HttpResponseMessage response = await AppMan.App.Client.GetAsync(Api.ChangelogURL);
             string output = await response.Content.ReadAsStringAsync();
-            Changelog = "<style>h3 { margin:0px; } div { padding-bottom:10px;}</style>" + output.Replace("<br />", "");
+            Changelog = "<style>h3 { margin:0px; } div { padding-bottom:10px;}</style>" + output.Replace("</div><br />", null);
         }
 
         #endregion

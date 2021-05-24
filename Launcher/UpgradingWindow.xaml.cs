@@ -60,16 +60,16 @@ namespace Cyanlabs.Launcher
                 }
 
             // Attempt to load existing settings if found, if not use defaults
-            string configFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData) + "\\CyanLabs\\Syn3Updater";
-            if (File.Exists(configFolderPath + "\\launcherPrefs.json"))
+            string commonConfigFolderPath = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData) + "\\CyanLabs\\Syn3Updater";
+            if (File.Exists(commonConfigFolderPath + "\\launcherPrefs.json"))
             {
                 try
                 {
-                    Core.LauncherPrefs = JsonConvert.DeserializeObject<LauncherPrefs>(File.ReadAllText(configFolderPath + "\\launcherPrefs.json"));
+                    Core.LauncherPrefs = JsonConvert.DeserializeObject<LauncherPrefs>(File.ReadAllText(commonConfigFolderPath + "\\launcherPrefs.json"));
                 }
                 catch (JsonReaderException)
                 {
-                    File.Delete(configFolderPath + "\\launcherPrefs.json");
+                    File.Delete(commonConfigFolderPath + "\\launcherPrefs.json");
                     Application.Current.Shutdown();
                     Process.Start(BaseFolder + "\\Syn3Updater.exe", "/launcher");
                 }
@@ -82,7 +82,12 @@ namespace Cyanlabs.Launcher
             // Start and wait for the UpdateCheck to complete
             UpdateCheck check = new UpdateCheck();
             bool updated = await check.Execute(Core.LauncherPrefs.ReleaseBranch, this, BaseFolder);
-            // Update complete, either no update needed or new update downloaded and extracted, run Syn3Updater.exe           
+            // Update complete, either no update needed or new update downloaded and extracted, run Syn3Updater.exe    
+            
+            string magnet = "";
+            foreach (string value in Environment.GetCommandLineArgs())
+                if (value.Contains("syn3updater://")) magnet = value;
+
             Process p = new Process
             {
                 StartInfo =
@@ -90,7 +95,7 @@ namespace Cyanlabs.Launcher
                     WindowStyle = ProcessWindowStyle.Hidden,
                     FileName = BaseFolder+"\\Syn3Updater.exe",
                     WorkingDirectory = BaseFolder ?? string.Empty,
-                    Arguments = "/launcher" + (updated ? " /updated" : ""),
+                    Arguments = "/launcher" + (updated ? " /updated" : "") + (!string.IsNullOrEmpty(magnet) ? " " + magnet : ""),
                     UseShellExecute = false
                 }
             };

@@ -109,7 +109,7 @@ namespace Cyanlabs.Syn3Updater.Helper
         }
 
         /// <summary>
-        ///     Generates a log.txt file on the root of the USB Drive
+        ///     Generates a log.txt file on the root of the USB Drive and a log-date.txt file in LogPath
         /// </summary>
         /// <param name="log">Additional log to append, usually the log textbox</param>
         /// <param name="upload">Set to true to upload log file <see cref="UploadLog"/>, else false to only save it to USB drive</param>
@@ -170,7 +170,8 @@ namespace Cyanlabs.Syn3Updater.Helper
                 .Append(log);
             string complete = data.ToString();
             File.WriteAllText($@"{driveletter}\log.txt", complete);
-
+            string currentDate = DateTime.Now.ToString("yyyy-MM-dd-HH-mm-ss");
+            File.WriteAllText($@"{AppMan.App.MainSettings.LogPath}log-{currentDate}.txt", complete);
             if (upload)
                 UploadLog(complete);
         }
@@ -183,6 +184,7 @@ namespace Cyanlabs.Syn3Updater.Helper
         {
             Dictionary<string, string> values = new Dictionary<string, string>
             {
+                {"computername", Environment.MachineName},
                 {"contents", log}
             };
             HttpClient client = new HttpClient();
@@ -228,9 +230,14 @@ namespace Cyanlabs.Syn3Updater.Helper
         {
             string LogXmlDetails = "";
             VistaFileDialog dialog = new VistaOpenFileDialog { Filter = "Interrogator Log XML Files|*.xml" };
-            if (!dialog.ShowDialog().GetValueOrDefault()) return LogXmlDetails;
+            if (!dialog.ShowDialog().GetValueOrDefault())
+            {
+                AppMan.App.Cancelled = true;
+                return LogXmlDetails;
+            }
             try
             {
+                AppMan.App.Cancelled = false;
                 XmlDocument doc = new XmlDocument();
                 //TODO: swtich to Async once code moves to dotnet 5+ 
                 doc.Load(dialog.FileName);
@@ -253,33 +260,34 @@ namespace Cyanlabs.Syn3Updater.Helper
                     if (apimmodel.Contains(my20))
                         AppMan.App.Settings.My20 = true;
                 }
-
                 string apimsize = interrogatorLog?.POtaModuleSnapShot.PNode.D2P1AdditionalAttributes.D2P1PartitionHealth.Where(x => x.Type == "/fs/images/")
                     .Select(x => x.Total)
                     .Single();
-                double apimsizeint = Convert.ToDouble(apimsize?.Remove(apimsize.Length - 1));
                 _apimDetails.PartNumber = apimmodel;
-                if (apimsizeint >= 0 && apimsizeint <= 8)
+                if (Double.TryParse(apimsize?.Remove(apimsize.Length - 1),NumberStyles.Any, CultureInfo.InvariantCulture, out double apimsizeint))
                 {
-                    _apimDetails.Nav = false;
-                    _apimDetails.Size = 8;
+                    if (apimsizeint >= 0 && apimsizeint <= 8)
+                    {
+                        _apimDetails.Nav = false;
+                        _apimDetails.Size = 8;
+                    }
+                    else if (apimsizeint >= 9 && apimsizeint <= 16)
+                    {
+                        _apimDetails.Nav = false;
+                        _apimDetails.Size = 16;
+                    }
+                    else if (apimsizeint >= 17 && apimsizeint <= 32)
+                    {
+                        _apimDetails.Nav = true;
+                        _apimDetails.Size = 32;
+                    }
+                    else if (apimsizeint >= 33 && apimsizeint <= 64)
+                    {
+                        _apimDetails.Nav = true;
+                        _apimDetails.Size = 64;
+                    }
                 }
-                else if (apimsizeint >= 9 && apimsizeint <= 16)
-                {
-                    _apimDetails.Nav = false;
-                    _apimDetails.Size = 16;
-                }
-                else if (apimsizeint >= 17 && apimsizeint <= 32)
-                {
-                    _apimDetails.Nav = true;
-                    _apimDetails.Size = 32;
-                }
-                else if (apimsizeint >= 33 && apimsizeint <= 64)
-                {
-                    _apimDetails.Nav = true;
-                    _apimDetails.Size = 64;
-                }
-
+                
                 if (_apimDetails.Nav)
                     LogXmlDetails += $"{LM.GetValue("Utility.APIMType")} Navigation {Environment.NewLine}";
                 else
