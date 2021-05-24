@@ -1,4 +1,5 @@
-﻿using System.Collections.ObjectModel;
+﻿using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -18,7 +19,7 @@ namespace Cyanlabs.Syn3Updater.UI
         public MainWindowViewModel()
         {
             AppTitle = $"Syn3 Updater {Assembly.GetEntryAssembly()?.GetName().Version}";
-            switch (ApplicationManager.Instance.Settings.Theme)
+            switch (AppMan.App.Settings.Theme)
             {
                 case "Dark":
                     ResourceDictionaryEx.GlobalTheme = ElementTheme.Dark;
@@ -37,35 +38,39 @@ namespace Cyanlabs.Syn3Updater.UI
                     break;
             }
 
-            ApplicationManager.Instance.LanguageChangedEvent += delegate
+            _args = Environment.GetCommandLineArgs();
+            AppMan.App.LanguageChangedEvent += delegate
             {
                 ObservableCollection<TabItem> ti = new ObservableCollection<TabItem>
                 {
                     new TabItem(EFontAwesomeIcon.Solid_InfoCircle, "About", "about"),
                     new TabItem(EFontAwesomeIcon.Solid_Home, "Home", "home", true),
                     new TabItem(EFontAwesomeIcon.Solid_Tools, "Utility", "utility"),
-                    new TabItem(EFontAwesomeIcon.Solid_Download, "Downloads", "downloads")
+                    new TabItem(EFontAwesomeIcon.Solid_Download, "Downloads", "downloads"),
                     //new TabItem(EFontAwesomeIcon.Solid_Bug, "Crash", "crashme"),
                     //TODO Implement Profiles and News in the future
                     //new TabItem("0xF163","Profiles","profiles"),
-                    //new TabItem("0xF582","News","news"),
+                    new TabItem(EFontAwesomeIcon.Solid_Newspaper,"News","news"),
                 };
 
                 foreach (TabItem tabItem in ti.Where(x => x != null && !string.IsNullOrWhiteSpace(x.Key)))
-                    tabItem.Name = LanguageManager.GetValue($"Main.{tabItem.Key}", Language);
+                    tabItem.Name = LM.GetValue($"Main.{tabItem.Key}", Language);
                 TabItems = ti;
             };
 
-            ApplicationManager.Instance.ShowDownloadsTab += delegate { CurrentTab = "downloads"; };
-            ApplicationManager.Instance.ShowSettingsTab += delegate { CurrentTab = "settings"; };
-            ApplicationManager.Instance.ShowHomeTab += delegate { CurrentTab = "home"; };
-            ApplicationManager.Instance.ShowUtilityTab += delegate { CurrentTab = "utility"; };
+            AppMan.App.ShowDownloadsTab += delegate { CurrentTab = "downloads"; };
+            AppMan.App.ShowSettingsTab += delegate { CurrentTab = "settings"; };
+            AppMan.App.ShowHomeTab += delegate { CurrentTab = "home"; };
+            AppMan.App.ShowUtilityTab += delegate { CurrentTab = "utility"; };
+            AppMan.App.ShowNewsTab += delegate { CurrentTab = "news"; };
         }
 
         #endregion
 
         #region Properties & Fields
 
+        private readonly string[] _args;
+        private int _newsvisited = 0;
         private string _currentTab = "home";
         private bool _hamburgerExtended;
         private ObservableCollection<TabItem> _tabItems = new ObservableCollection<TabItem>();
@@ -81,19 +86,24 @@ namespace Cyanlabs.Syn3Updater.UI
             get => _currentTab;
             set
             {
-                if (value != "about" && !ApplicationManager.Instance.Settings.DisclaimerAccepted)
+                if (AppMan.App.AppUpdated != 2 && _args.Contains("/updated"))
                 {
-                    ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.DisclaimerNotAccepted"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    value = "news";
+                    AppMan.App.AppUpdated++;
+                }
+                else if (value != "about" && !AppMan.App.Settings.DisclaimerAccepted)
+                {
+                    ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.DisclaimerNotAccepted"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Warning);
                     value = "about";
                 }
-                else if (value == "home" && (ApplicationManager.Instance.Settings.CurrentRegion?.Length == 0 || ApplicationManager.Instance.Settings.CurrentVersion == 0 || ApplicationManager.Instance.Settings.CurrentVersion.ToString().Length != 7))
+                else if (value == "home" && (AppMan.App.Settings.CurrentRegion?.Length == 0 || AppMan.App.Settings.CurrentVersion == 0 || AppMan.App.Settings.CurrentVersion.ToString().Length != 7))
                 {
-                    ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.NoVersionOrRegionSelected"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.NoVersionOrRegionSelected"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Warning);
                     value = "settings";
                 }
-                else if (value != "downloads" && ApplicationManager.Instance.IsDownloading)
+                else if (value != "downloads" && AppMan.App.IsDownloading)
                 {
-                    ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.DownloadInProgress"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.DownloadInProgress"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Warning);
                     value = "downloads";
                 }
                 else if (value == "crashme")

@@ -1,4 +1,7 @@
-﻿using System.Windows;
+﻿using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Threading;
 
 namespace Cyanlabs.Syn3Updater
@@ -16,13 +19,14 @@ namespace Cyanlabs.Syn3Updater
             {
                 DispatcherUnhandledException += App_DispatcherUnhandledException;
             }
-
-            ApplicationManager.Instance.Initialize();
+            if (SingleInstance.AlreadyRunning())
+                App.Current.Shutdown(); // Just shutdown the current application,if any instance found.  
+            AppMan.App.Initialize();
         }
 
         private void App_DispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
-            ApplicationManager.Logger.CrashWindow(e.Exception);
+            AppMan.Logger.CrashWindow(e.Exception);
             e.Handled = true;
         }
 
@@ -31,6 +35,47 @@ namespace Cyanlabs.Syn3Updater
             //  throw new NotImplementedException();
         }
 
+        public sealed class SingleInstance
+        {
+            public static bool AlreadyRunning()
+            {
+                bool running = false;
+                try
+                {
+                    // Getting collection of process  
+                    Process currentProcess = Process.GetCurrentProcess();
+
+                    // Check with other process already running   
+                    foreach (var p in Process.GetProcesses())
+                    {
+                        if (p.Id != currentProcess.Id) // Check running process   
+                        {
+                            if (p.ProcessName.Equals(currentProcess.ProcessName))
+                            {
+                                running = true;
+                                IntPtr hFound = p.MainWindowHandle;
+                                User32API.ShowWindow(hFound, 9);
+                                User32API.SetForegroundWindow(hFound); // Activate the window, if process is already running  
+                                break;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // ignored
+                }
+                return running;
+            }
+        }
         #endregion
+    }
+    public class User32API
+    {
+        [DllImport("User32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("User32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     }
 }

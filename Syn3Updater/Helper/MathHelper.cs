@@ -49,6 +49,11 @@ namespace Cyanlabs.Syn3Updater.Helper
             return Math.Sign(byteCount) * num + suf[place];
         }
 
+        public static bool IsOdd(int value)
+        {
+            return value % 2 != 0;
+        }
+
         #endregion
     }
 }

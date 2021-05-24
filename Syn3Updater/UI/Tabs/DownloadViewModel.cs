@@ -6,13 +6,14 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Cyanlabs.Syn3Updater.Helper;
 using Cyanlabs.Syn3Updater.Model;
-using Cyanlabs.Updater.Services;
+using Cyanlabs.Syn3Updater.Services;
 
 namespace Cyanlabs.Syn3Updater.UI.Tabs
 {
@@ -84,6 +85,14 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             set => SetProperty(ref _installMode, value);
         }
 
+        private string _installModeForced;
+
+        public string InstallModeForced
+        {
+            get => _installModeForced;
+            set => SetProperty(ref _installModeForced, value);
+        }
+
         public int CurrentProgress
         {
             get => _currentProgress;
@@ -127,20 +136,20 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
 
         public void Init()
         {
-            if (!ApplicationManager.Instance.IsDownloading || _downloadTask?.Status.Equals(TaskStatus.Running) == true) return;
+            if (!AppMan.App.IsDownloading || _downloadTask?.Status.Equals(TaskStatus.Running) == true) return;
             Log = string.Empty;
-            _selectedRelease = ApplicationManager.Instance.SelectedRelease;
-            _selectedRegion = ApplicationManager.Instance.SelectedRegion;
-            _selectedMapVersion = ApplicationManager.Instance.SelectedMapVersion;
+            _selectedRelease = AppMan.App.SelectedRelease;
+            _selectedRegion = AppMan.App.SelectedRegion;
+            _selectedMapVersion = AppMan.App.SelectedMapVersion;
             string text = $"Selected Region: {_selectedRegion} - Release: {_selectedRelease} - Map Version: {_selectedMapVersion}";
             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
 
-            InstallMode = ApplicationManager.Instance.InstallMode;
-            _action = ApplicationManager.Instance.Action;
+            InstallMode = AppMan.App.InstallMode;
+            InstallModeForced = AppMan.App.ModeForced ? "Yes" : "No"; _action = AppMan.App.Action;
 
             text = $"Install Mode: {InstallMode}";
             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-            ApplicationManager.Logger.Info(text);
+            AppMan.Logger.Info(text);
 
             CancelButtonEnabled = true;
             CurrentProgress = 0;
@@ -148,7 +157,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             PercentageChanged += DownloadPercentageChanged;
 
             DownloadQueueList = new ObservableCollection<string>();
-            foreach (SModel.Ivsu item in ApplicationManager.Instance.Ivsus)
+            foreach (SModel.Ivsu item in AppMan.App.Ivsus)
                 DownloadQueueList.Add(item.Url);
 
             _ct = _tokenSource.Token;
@@ -170,133 +179,140 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                }
                finally
                {
-                   Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Clear());
+                   if (t.Exception != null) Application.Current.Dispatcher.Invoke(() => AppMan.Logger.CrashWindow(t.Exception.InnerExceptions.FirstOrDefault()));
+
+                   CancelAction();
                }
            });
         }
 
         private async Task DoDownload(SModel.Ivsu item)
         {
+            _count = 0;
+            TotalPercentageMax = 100 * AppMan.App.Ivsus.Count * (AppMan.App.DownloadOnly ? 2 : 4);
 
-            if (_ct.IsCancellationRequested)
+            foreach (SModel.Ivsu item in AppMan.App.Ivsus)
             {
-                Log += "[" + DateTime.Now + "] Process cancelled by user" + Environment.NewLine;
-                ApplicationManager.Logger.Info("Process cancelled by user");
-                return;
-            }
+                if (_ct.IsCancellationRequested)
+                {
+                    Log += "[" + DateTime.Now + "] Process cancelled by user" + Environment.NewLine;
+                    AppMan.Logger.Info("Process cancelled by user");
+                    return;
+                }
 
-            if (await Task.Run(() => ValidateFile(item.Url, ApplicationManager.Instance.DownloadPath + item.FileName, item.Md5, false, true)))
-            {
-                string text = $"Validated: {item.FileName} (Skipping Download)";
-                Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                ApplicationManager.Logger.Info(text);
+                if (await Task.Run(() =>( ValidateFile(item.Url, AppMan.App.DownloadPath + item.FileName, item.Md5, false, true)))
+                {
+                    string text = $"Validated: {item.FileName} (Skipping Download)";
+                    Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
+                    AppMan.Logger.Info(text);
 
                 if (item.Source == "naviextras")
                 {
                     FileHelper.OutputResult outputResult = _fileHelper.ExtractMultiPackage(item, _ct);
 
-                    text = $"Extracting: {item.FileName} (This may take some time!)";
-                    Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                    ApplicationManager.Logger.Info(text);
+                        text = $"Extracting: {item.FileName} (This may take some time!)";
+                        Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
+                        AppMan.Logger.Info(text);
 
-                    if (outputResult.Result)
-                    {
-                        Log += "[" + DateTime.Now + "] " + outputResult.Message + Environment.NewLine;
-                        ApplicationManager.Logger.Info(outputResult.Message);
+                        if (outputResult.Result)
+                        {
+                            Log += "[" + DateTime.Now + "] " + outputResult.Message + Environment.NewLine;
+                            AppMan.Logger.Info(outputResult.Message);
+                        }
                     }
+                    _count++;
                 }
-                _count++;
-            }
-            else
-            {
-                if (_ct.IsCancellationRequested) return;
-                DownloadInfo = $"Downloading: {item.FileName}";
-
-                Log += "[" + DateTime.Now + "] " + $"Downloading: {item.FileName}" + Environment.NewLine;
-                ApplicationManager.Logger.Info($"Downloading: {item.FileName}");
-
-                _progressBarSuffix = LanguageManager.GetValue("String.Downloaded");
-                try
+                else
                 {
-                    string text = "";
-                    for (int i = 1; i < 4; i++)
+                    if (_ct.IsCancellationRequested) return;
+                    DownloadInfo = $"Downloading: {item.FileName}";
+
+                    Log += "[" + DateTime.Now + "] " + $"Downloading: {item.FileName}" + Environment.NewLine;
+                    AppMan.Logger.Info($"Downloading: {item.FileName}");
+
+                    _progressBarSuffix = LM.GetValue("String.Downloaded");
+                    try
                     {
-                        if (_ct.IsCancellationRequested) return;
-                        if (i > 1)
+                        string text = "";
+                        for (int i = 1; i < 4; i++)
                         {
-                            text = $"Downloading (Attempt #{i}): {item.Url}";
-                            DownloadInfo = text;
-                            Log += "[" + DateTime.Now + "] " + $"Downloading: {item.FileName}" + Environment.NewLine;
-                            ApplicationManager.Logger.Info($"Downloading: {item.FileName}");
-                        }
-
-                        if (!await _fileHelper.DownloadFile(item.Url, ApplicationManager.Instance.DownloadPath + item.FileName, _ct))
-                        {
-                            CancelAction();
-                            break;
-                        }
-
-                        if (await Task.Run(() => ValidateFile(item.Url, ApplicationManager.Instance.DownloadPath + item.FileName, item.Md5, false)))
-                        {
-                            text = $"Downloaded: {item.FileName}";
-                            Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                            ApplicationManager.Logger.Info(text);
-                            if (item.Source == "naviextras")
+                            if (_ct.IsCancellationRequested) return;
+                            if (i > 1)
                             {
-                                FileHelper.OutputResult outputResult = _fileHelper.ExtractMultiPackage(item, _ct);
-
-                                text = $"Extracting: {item.FileName} (This may take some time!)";
-                                Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                                ApplicationManager.Logger.Info(text);
-
-                                if (outputResult.Result)
-                                {
-                                    Log += "[" + DateTime.Now + "] " + outputResult.Message + Environment.NewLine;
-                                    ApplicationManager.Logger.Info(outputResult.Message);
-                                }
+                                text = $"Downloading (Attempt #{i}): {item.Url}";
+                                DownloadInfo = text;
+                                Log += "[" + DateTime.Now + "] " + $"Downloading: {item.FileName}" + Environment.NewLine;
+                                AppMan.Logger.Info($"Downloading: {item.FileName}");
                             }
-                            _count++;
-                            break;
-                        }
 
-                        if (i == 3)
-                        {
-                            text = $"unable to validate {item.FileName} after 3 tries, ABORTING PROCESS!";
-                            Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                            ApplicationManager.Logger.Info(text);
+                            if (!await _fileHelper.DownloadFile(item.Url, AppMan.App.DownloadPath + item.FileName, _ct))
+                            {
+                                CancelAction();
+                                break;
+                            }
 
-                            Application.Current.Dispatcher.Invoke(() =>
-                                ModernWpf.MessageBox.Show(string.Format(LanguageManager.GetValue("MessageBox.FailedToValidate3"), item.FileName), "Syn3 Updater",
-                                    MessageBoxButton.OK, MessageBoxImage.Error));
-                            CancelAction();
-                            break;
+                            if (await Task.Run(() => ValidateFile(item.Url, AppMan.App.DownloadPath + item.FileName, item.Md5, false))
+                            {
+                                text = $"Downloaded: {item.FileName}";
+                                Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
+                                AppMan.Logger.Info(text);
+                                if (item.Source == "naviextras")
+                                {
+                                    FileHelper.OutputResult outputResult = _fileHelper.ExtractMultiPackage(item, _ct);
+
+                                    text = $"Extracting: {item.FileName} (This may take some time!)";
+                                    Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
+                                    AppMan.Logger.Info(text);
+
+                                    if (outputResult.Result)
+                                    {
+                                        Log += "[" + DateTime.Now + "] " + outputResult.Message + Environment.NewLine;
+                                        AppMan.Logger.Info(outputResult.Message);
+                                    }
+                                }
+                                _count++;
+                                break;
+                            }
+
+                            if (i == 3)
+                            {
+                                text = $"unable to validate {item.FileName} after 3 tries, ABORTING PROCESS!";
+                                Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
+                                AppMan.Logger.Info(text);
+
+                                Application.Current.Dispatcher.Invoke(() =>
+                                    ModernWpf.MessageBox.Show(string.Format(LM.GetValue("MessageBox.FailedToValidate3"), item.FileName), "Syn3 Updater",
+                                        MessageBoxButton.OK, MessageBoxImage.Error));
+                                CancelAction();
+                                break;
+                            }
                         }
                     }
+                    catch (TaskCanceledException)
+                    {
+                        break;
+                    }
                 }
-                catch (TaskCanceledException)
-                {
-                    //break;
-                }
+
+                Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Remove(item.Url));
+                _count++;
+                PercentageChanged.Raise(this, 100);
             }
-            Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Remove(item.Url));
-            _count++;
-            PercentageChanged.Raise(this, 100);
-        }
 
         private async Task DownloadComplete()
         {
             if (!_ct.IsCancellationRequested)
             {
-                if (ApplicationManager.Instance.DownloadOnly)
+                if (AppMan.App.DownloadOnly)
                 {
                     string text = "Process completed successfully (download only)";
                     Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                    ApplicationManager.Logger.Info(text);
+                    AppMan.Logger.Info(text);
 
-                    DownloadInfo = LanguageManager.GetValue("String.Completed");
+                    DownloadInfo = LM.GetValue("String.Completed");
                     Application.Current.Dispatcher.Invoke(() =>
-                        ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.DownloadOnlyComplete"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information));
-                    ApplicationManager.Instance.IsDownloading = false;
+                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.DownloadOnlyComplete"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information));
+                    AppMan.App.IsDownloading = false;
                     CancelAction();
                 }
                 else
@@ -310,16 +326,16 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
         private async Task DoCopy()
 #pragma warning restore 1998
         {
-            foreach (SModel.Ivsu extraitem in ApplicationManager.Instance.ExtraIvsus)
+            foreach (SModel.Ivsu extraitem in AppMan.App.ExtraIvsus)
             {
-                ApplicationManager.Instance.Ivsus.Add(extraitem);
+                AppMan.App.Ivsus.Add(extraitem);
             }
-            foreach (SModel.Ivsu item in ApplicationManager.Instance.Ivsus)
+            foreach (SModel.Ivsu item in AppMan.App.Ivsus)
             {
                 if (_ct.IsCancellationRequested)
                 {
                     Log += "[" + DateTime.Now + "] Process cancelled by user" + Environment.NewLine;
-                    ApplicationManager.Logger.Info("Process cancelled by user");
+                    AppMan.Logger.Info("Process cancelled by user");
                     return;
                 }
                 if (item.Source == "naviextras")
@@ -327,13 +343,13 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     _count++;
                     continue;
                 }
-                if (await Task.Run(() => ValidateFile(ApplicationManager.Instance.DownloadPath + item.FileName, $@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5,
-                    true, true)))
+                if (await ValidateFile(AppMan.App.DownloadPath + item.FileName, $@"{AppMan.App.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5,
+                    true, true))
                 {
                     string text = $"{item.FileName} exists and validated successfully, skipping copy";
 
                     Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                    ApplicationManager.Logger.Info(text);
+                    AppMan.Logger.Info(text);
 
                     _count++;
                 }
@@ -345,9 +361,9 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     DownloadInfo = text;
 
                     Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                    ApplicationManager.Logger.Info(text);
+                    AppMan.Logger.Info(text);
 
-                    _progressBarSuffix = LanguageManager.GetValue("String.Copied");
+                    _progressBarSuffix = LM.GetValue("String.Copied");
 
                     for (int i = 1; i < 4; i++)
                     {
@@ -358,13 +374,13 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                             DownloadInfo = text;
 
                             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                            ApplicationManager.Logger.Info(text);
+                            AppMan.Logger.Info(text);
                         }
 
                         try
                         {
-                            await _fileHelper.CopyFileAsync(ApplicationManager.Instance.DownloadPath + item.FileName,
-                                $@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\{item.FileName}", _ct);
+                            await _fileHelper.CopyFileAsync(AppMan.App.DownloadPath + item.FileName,
+                                $@"{AppMan.App.DriveLetter}\SyncMyRide\{item.FileName}", _ct);
                         }
                         catch (HttpRequestException webException)
                         {
@@ -372,7 +388,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                                 webException.GetFullMessage(), "Syn3 Updater",
                                 MessageBoxButton.OK,
                                 MessageBoxImage.Exclamation));
-                            ApplicationManager.Logger.Info("ERROR: " + webException.GetFullMessage());
+                            AppMan.Logger.Info("ERROR: " + webException.GetFullMessage());
                             CancelAction();
                         }
                         catch (IOException ioException)
@@ -381,16 +397,16 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                                 ioException.GetFullMessage(), "Syn3 Updater",
                                 MessageBoxButton.OK,
                                 MessageBoxImage.Exclamation));
-                            ApplicationManager.Logger.Info("ERROR: " + ioException.GetFullMessage());
+                            AppMan.Logger.Info("ERROR: " + ioException.GetFullMessage());
                             CancelAction();
                         }
 
-                        if (await Task.Run(() => ValidateFile(ApplicationManager.Instance.DownloadPath + item.FileName,
-                            $@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5, true)))
+                        if (await ValidateFile(AppMan.App.DownloadPath + item.FileName,
+                            $@"{AppMan.App.DriveLetter}\SyncMyRide\{item.FileName}", item.Md5, true))
                         {
                             text = $"Copied: {item.FileName}";
                             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                            ApplicationManager.Logger.Info(text);
+                            AppMan.Logger.Info(text);
                             _count++;
                             break;
                         }
@@ -399,10 +415,10 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                         {
                             text = $"unable to validate {item.FileName} after 3 tries, ABORTING PROCESS!";
                             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-                            ApplicationManager.Logger.Info(text);
+                            AppMan.Logger.Info(text);
 
                             Application.Current.Dispatcher.Invoke(() => ModernWpf.MessageBox.Show(
-                                string.Format(LanguageManager.GetValue("MessageBox.FailedToValidate3"), item.FileName), "Syn3 Updater", MessageBoxButton.OK,
+                                string.Format(LM.GetValue("MessageBox.FailedToValidate3"), item.FileName), "Syn3 Updater", MessageBoxButton.OK,
                                 MessageBoxImage.Error));
                             CancelAction();
                             break;
@@ -410,7 +426,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     }
                 }
 
-                Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Remove(ApplicationManager.Instance.DownloadPath + item.FileName));
+                Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Remove(AppMan.App.DownloadPath + item.FileName));
                 _count++;
                 PercentageChanged.Raise(this, 100);
             }
@@ -431,12 +447,12 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                         break;
                 }
             }
-            else if (_action == "logutility" || _action == "gracenotesremoval" || _action == "voiceshrinker" || _action == "downgrade")
+            else if (_action == "logutility" || _action == "logutilitymy20" || _action == "gracenotesremoval" || _action == "voiceshrinker" || _action == "downgrade")
                 CreateAutoInstall();
 
             CancelButtonEnabled = false;
             string text = String.Empty;
-            if (ApplicationManager.Instance.DownloadToFolder)
+            if (AppMan.App.DownloadToFolder)
             {
                 text = "ALL FILES DOWNLOADED AND COPIED TO THE SELECTED FOLDER SUCCESSFULLY!";
             }
@@ -446,49 +462,67 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             }
 
             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-            ApplicationManager.Logger.Info(text);
+            AppMan.Logger.Info(text);
 
-            DownloadInfo = LanguageManager.GetValue("String.Completed");
-            ApplicationManager.Instance.IsDownloading = false;
+            DownloadInfo = LM.GetValue("String.Completed");
+            AppMan.App.IsDownloading = false;
 
             Application.Current.Dispatcher.Invoke(() =>
             {
-                USBHelper.GenerateLog(Log, ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.UploadLog"), "Syn3 Updater", MessageBoxButton.YesNo,
-                MessageBoxImage.Information) == MessageBoxResult.Yes);
+                if (_action != "logutilitymy20")
+                    USBHelper.GenerateLog(Log, ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.UploadLog"), "Syn3 Updater", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes);
 
                 if (_action == "main")
                 {
-                    if (ModernWpf.MessageBox.Show(string.Format(LanguageManager.GetValue("MessageBox.UpdateCurrentversion"), ApplicationManager.Instance.SVersion, ApplicationManager.Instance.SelectedRelease.Replace("Sync ", "")), "Syn3 Updater", MessageBoxButton.YesNo,
+                    if (ModernWpf.MessageBox.Show(string.Format(LM.GetValue("MessageBox.UpdateCurrentversion"), AppMan.App.SVersion, AppMan.App.SelectedRelease.Replace("Sync ", "")), "Syn3 Updater", MessageBoxButton.YesNo,
                         MessageBoxImage.Information) == MessageBoxResult.Yes)
                     {
-                        ApplicationManager.Instance.Settings.CurrentVersion =
-                            Convert.ToInt32(ApplicationManager.Instance.SelectedRelease.Replace(".", "").Replace("Sync ", ""));
-                        ApplicationManager.Instance.SVersion = ApplicationManager.Instance.SelectedRelease.Replace("Sync ", "");
+                        AppMan.App.Settings.CurrentVersion =
+                            Convert.ToInt32(AppMan.App.SelectedRelease.Replace(".", "").Replace("Sync ", ""));
+                        AppMan.App.SVersion = AppMan.App.SelectedRelease.Replace("Sync ", "");
                     }
 
-                    if (ApplicationManager.Instance.DownloadToFolder)
+                    if (AppMan.App.DownloadToFolder)
                     {
-                        ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.CompletedFolder"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
-                        Process.Start(ApplicationManager.Instance.DriveLetter);
+                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.CompletedFolder"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                        Process.Start(AppMan.App.DriveLetter);
                     }
                     else
                     {
-                        ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.Completed"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.Completed"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
                         Process.Start($"https://cyanlabs.net/tutorials/windows-automated-method-update-to-3-4/#{InstallMode}");
                     }
 
-                    ApplicationManager.Instance.FireHomeTabEvent();
+                    AppMan.App.FireHomeTabEvent();
                 }
                 else if (_action == "logutility")
                 {
-                    ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.LogUtilityComplete"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
-                    ApplicationManager.Instance.UtilityCreateLogStep1Complete = true;
-                    ApplicationManager.Instance.FireUtilityTabEvent();
+                    ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.LogUtilityComplete"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                    AppMan.App.UtilityCreateLogStep1Complete = true;
+                    AppMan.App.FireUtilityTabEvent();
+                }
+                else if (_action == "logutilitymy20")
+                {
+                    ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.LogUtilityCompleteMy20"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                    USBHelper usbHelper = new USBHelper();
+                    usbHelper.LogParseXmlAction().ConfigureAwait(false);
+                    AppMan.App.UtilityCreateLogStep1Complete = true;
+                    if (AppMan.App.Settings.My20)
+                    {
+                        AppMan.App.Settings.My20 = true;
+                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20Found"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        AppMan.App.Settings.My20 = false;
+                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.My20NotFound"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    AppMan.App.FireHomeTabEvent();
                 }
                 else if (_action == "gracenotesremoval" || _action == "voiceshrinker" || _action == "downgrade")
                 {
-                    ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.GenericUtilityComplete"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
-                    ApplicationManager.Instance.FireUtilityTabEvent();
+                    ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.GenericUtilityComplete"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Information);
+                    AppMan.App.FireUtilityTabEvent();
                 }
             });
             Reset();
@@ -497,32 +531,32 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
         private void CancelAction()
         {
             CancelButtonEnabled = false;
-            ApplicationManager.Instance.IsDownloading = false;
+            AppMan.App.IsDownloading = false;
             _tokenSource.Cancel();
             TotalPercentage = 0;
             CurrentProgress = 0;
             DownloadInfo = "";
             DownloadPercentage = "";
             Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Clear());
-            ApplicationManager.Instance.AppsSelected = false;
-            ApplicationManager.Instance.SkipFormat = false;
+            AppMan.App.AppsSelected = false;
+            AppMan.App.SkipFormat = false;
             _tokenSource.Dispose();
             _tokenSource = new CancellationTokenSource();
-            ApplicationManager.Instance.FireHomeTabEvent();
+            AppMan.App.FireHomeTabEvent();
         }
 
         private void Reset()
         {
             CancelButtonEnabled = false;
-            ApplicationManager.Instance.IsDownloading = false;
+            AppMan.App.IsDownloading = false;
             _tokenSource.Cancel();
             TotalPercentage = 0;
             CurrentProgress = 0;
             DownloadInfo = "";
             DownloadPercentage = "";
             Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Clear());
-            ApplicationManager.Instance.AppsSelected = false;
-            ApplicationManager.Instance.SkipFormat = false;
+            AppMan.App.AppsSelected = false;
+            AppMan.App.SkipFormat = false;
             _tokenSource.Dispose();
             _tokenSource = new CancellationTokenSource();
         }
@@ -536,30 +570,30 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
 
         private async Task PrepareUsbAsync()
         {
-            if (ApplicationManager.Instance.DownloadToFolder)
+            if (AppMan.App.DownloadToFolder)
             {
                 Log += "[" + DateTime.Now + "] Preparing selected directory (No USB Drive Selected)" + Environment.NewLine;
-                ApplicationManager.Logger.Info("Preparing selected directory  (No USB Drive Selected)");
+                AppMan.Logger.Info("Preparing selected directory  (No USB Drive Selected)");
             }
             else
             {
                 Log += "[" + DateTime.Now + "] Preparing USB drive" + Environment.NewLine;
-                ApplicationManager.Logger.Info("Preparing USB drive");
+                AppMan.Logger.Info("Preparing USB drive");
             }
 
-            if (ApplicationManager.Instance.DownloadToFolder)
+            if (AppMan.App.DownloadToFolder)
             {
-                foreach (string file in Directory.GetFiles(ApplicationManager.Instance.DriveLetter))
+                foreach (string file in Directory.GetFiles(AppMan.App.DriveLetter))
                     File.Delete(file);
-                foreach (string dir in Directory.GetDirectories(ApplicationManager.Instance.DriveLetter))
+                foreach (string dir in Directory.GetDirectories(AppMan.App.DriveLetter))
                     Directory.Delete(dir, true);
             }
             else
             {
-                if (!ApplicationManager.Instance.SkipFormat && !ApplicationManager.Instance.DownloadOnly)
+                if (!AppMan.App.SkipFormat && !AppMan.App.DownloadOnly)
                 {
                     Log += "[" + DateTime.Now + "] Formatting USB drive" + Environment.NewLine;
-                    ApplicationManager.Logger.Info("Formatting USB drive");
+                    AppMan.Logger.Info("Formatting USB drive");
                     using (Process p = new Process())
                     {
                         p.StartInfo.UseShellExecute = false;
@@ -568,15 +602,15 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                         p.StartInfo.CreateNoWindow = true;
 
                         Log += "[" + DateTime.Now + "] Re-creating partition table as MBR and formatting as ExFat on selected USB drive" + Environment.NewLine;
-                        ApplicationManager.Logger.Info("Re-creating partition table as MBR and formatting as ExFat on selected USB drive");
+                        AppMan.Logger.Info("Re-creating partition table as MBR and formatting as ExFat on selected USB drive");
 
                         p.Start();
-                        p.StandardInput.WriteLine($"SELECT DISK={ApplicationManager.Instance.DriveNumber}");
+                        p.StandardInput.WriteLine($"SELECT DISK={AppMan.App.DriveNumber}");
                         p.StandardInput.WriteLine("CLEAN");
                         p.StandardInput.WriteLine("CONVERT MBR");
                         p.StandardInput.WriteLine("CREATE PARTITION PRIMARY");
                         p.StandardInput.WriteLine("FORMAT FS=EXFAT LABEL=\"CYANLABS\" QUICK");
-                        p.StandardInput.WriteLine($"ASSIGN LETTER={ApplicationManager.Instance.DriveLetter.Replace(":", "")}");
+                        p.StandardInput.WriteLine($"ASSIGN LETTER={AppMan.App.DriveLetter.Replace(":", "")}");
                         p.StandardInput.WriteLine("EXIT");
 
                         p.WaitForExit();
@@ -586,32 +620,31 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 }
             }
 
-            foreach (SModel.Ivsu item in ApplicationManager.Instance.Ivsus)
-                Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Add(ApplicationManager.Instance.DownloadPath + item.FileName));
+            foreach (SModel.Ivsu item in AppMan.App.Ivsus)
+                Application.Current.Dispatcher.Invoke(() => DownloadQueueList.Add(AppMan.App.DownloadPath + item.FileName));
 
-            Directory.CreateDirectory($@"{ApplicationManager.Instance.DriveLetter}\SyncMyRide\");
+            Directory.CreateDirectory($@"{AppMan.App.DriveLetter}\SyncMyRide\");
             await DoCopy().ContinueWith(t =>
             {
                 if (t.IsFaulted)
                 {
                     if (t.Exception != null)
-                        Application.Current.Dispatcher.Invoke(() => ApplicationManager.Logger.CrashWindow(t.Exception.InnerExceptions.FirstOrDefault()));
+                        Application.Current.Dispatcher.Invoke(() => AppMan.Logger.CrashWindow(t.Exception.InnerExceptions.FirstOrDefault()));
                     CancelAction();
                 }
 
                 if (t.IsCompleted && !t.IsFaulted)
                     CopyComplete();
             }, _tokenSource.Token);
-
         }
 
         private void CreateAutoInstall()
         {
             Log += "[" + DateTime.Now + "] Generating Autoinstall.lst" + Environment.NewLine;
-            ApplicationManager.Logger.Info("Generating Autoinstall.lst");
+            AppMan.Logger.Info("Generating Autoinstall.lst");
             StringBuilder autoinstalllst = DownloadViewModelService.CreateAutoInstallFile(_selectedRelease, _selectedRegion);
-            File.WriteAllText($@"{ApplicationManager.Instance.DriveLetter}\autoinstall.lst", autoinstalllst.ToString());
-            File.Create($@"{ApplicationManager.Instance.DriveLetter}\DONTINDX.MSA");
+            File.WriteAllText($@"{AppMan.App.DriveLetter}\autoinstall.lst", autoinstalllst.ToString());
+            File.Create($@"{AppMan.App.DriveLetter}\DONTINDX.MSA");
         }
 
 
@@ -619,11 +652,11 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
         private void CreateReformat()
         {
             Log += "[" + DateTime.Now + "] Generating reformat.lst" + Environment.NewLine;
-            ApplicationManager.Logger.Info("Generating reformat.lst");
+            AppMan.Logger.Info("Generating reformat.lst");
 
             string reformatlst = "";
             int i = 0;
-            foreach (SModel.Ivsu item in ApplicationManager.Instance.Ivsus)
+            foreach (SModel.Ivsu item in AppMan.App.Ivsus)
             {
                 if (item.Source == "naviextras") continue;
                 if (InstallMode == "reformat")
@@ -637,17 +670,17 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 }
                 i++;
                 reformatlst += $"{item.Type}={item.FileName}";
-                if (i != ApplicationManager.Instance.Ivsus.Count)
+                if (i != AppMan.App.Ivsus.Count)
                     reformatlst += Environment.NewLine;
             }
 
-            File.WriteAllText($@"{ApplicationManager.Instance.DriveLetter}\reformat.lst", reformatlst);
+            File.WriteAllText($@"{AppMan.App.DriveLetter}\reformat.lst", reformatlst);
 
             Log += "[" + DateTime.Now + "] Generating autoinstall.lst" + Environment.NewLine;
-            ApplicationManager.Logger.Info("Generating autoinstall.lst");
+            AppMan.Logger.Info("Generating autoinstall.lst");
 
             var autoinstalllst = new StringBuilder(
-                $@"; CyanLabs Syn3Updater 2.x - {InstallMode} Mode - {_selectedRelease} {_selectedRegion}{Environment.NewLine}{Environment.NewLine}[SYNCGen3.0_ALL_PRODUCT]{Environment.NewLine}");
+                $@"; CyanLabs Syn3Updater {Assembly.GetEntryAssembly()?.GetName().Version} {AppMan.App.LauncherPrefs.ReleaseTypeInstalled} - {InstallMode} {(AppMan.App.ModeForced ? "FORCED " : "")} Mode - {_selectedRelease} {_selectedRegion}{Environment.NewLine}{Environment.NewLine}[SYNCGen3.0_ALL_PRODUCT]{Environment.NewLine}");
             if (InstallMode == "downgrade")
             {
                 autoinstalllst.Append(
@@ -666,8 +699,8 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 autoinstalllst.Append("Options = AutoInstall");
             }
 
-            File.WriteAllText($@"{ApplicationManager.Instance.DriveLetter}\autoinstall.lst", autoinstalllst.ToString());
-            File.Create($@"{ApplicationManager.Instance.DriveLetter}\DONTINDX.MSA");
+            File.WriteAllText($@"{AppMan.App.DriveLetter}\autoinstall.lst", autoinstalllst.ToString());
+            File.Create($@"{AppMan.App.DriveLetter}\DONTINDX.MSA");
         }
 
         private async Task<bool> ValidateFile(string srcfile, string localfile, string md5, bool copy, bool existing = false)
@@ -677,15 +710,15 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 text = $"Checking Existing File: {Path.GetFileName(localfile)}";
             DownloadInfo = text;
             Log += $"[{DateTime.Now}] {text} {Environment.NewLine}";
-            ApplicationManager.Logger.Info(text);
+            AppMan.Logger.Info(text);
 
-            _progressBarSuffix = LanguageManager.GetValue("String.Validated");
+            _progressBarSuffix = LM.GetValue("String.Validated");
             FileHelper.OutputResult outputResult = await _fileHelper.ValidateFile(srcfile, localfile, md5, copy, _ct);
 
             if (outputResult.Message != "")
             {
                 Log += "[" + DateTime.Now + "] " + outputResult.Message + Environment.NewLine;
-                ApplicationManager.Logger.Info(outputResult.Message);
+                AppMan.Logger.Info(outputResult.Message);
             }
 
             return outputResult.Result;

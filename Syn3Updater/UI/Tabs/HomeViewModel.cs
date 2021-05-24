@@ -224,7 +224,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 if (value != null)
                 {
                     SetProperty(ref _currentRegion, value);
-                    ApplicationManager.Instance.Settings.CurrentRegion = value;
+                    AppMan.App.Settings.CurrentRegion = value;
                 }
             }
         }
@@ -264,6 +264,22 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             set => SetProperty(ref _installMode, value);
         }
 
+        private string _installModeForced;
+
+        public string InstallModeForced
+        {
+            get => _installModeForced;
+            set => SetProperty(ref _installModeForced, value);
+        }
+
+        private string _My20Mode;
+
+        public string My20Mode
+        {
+            get => _My20Mode;
+            set => SetProperty(ref _My20Mode, value);
+        }
+
         private bool _startEnabled;
 
         public bool StartEnabled
@@ -287,28 +303,30 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
         public void ReloadSettings()
         {
             NotesVisibility = Visibility.Hidden;
-            CurrentNav = ApplicationManager.Instance.Settings.CurrentNav ? "Yes" : "No";
-            CurrentRegion = ApplicationManager.Instance.Settings.CurrentRegion;
-            CurrentVersion = ApplicationManager.Instance.SVersion;
-            DownloadLocation = ApplicationManager.Instance.DownloadPath;
+            CurrentNav = AppMan.App.Settings.CurrentNav ? "Yes" : "No";
+            CurrentRegion = AppMan.App.Settings.CurrentRegion;
+            CurrentVersion = AppMan.App.SVersion;
+            DownloadLocation = AppMan.App.DownloadPath;
+            My20Mode = AppMan.App.Settings.My20 ? "Enabled" : "Disabled / Not MY20";
+            InstallModeForced = AppMan.App.ModeForced ? "Yes" : "No";
             SelectedMapVersionIndex = -1;
             SelectedReleaseIndex = -1;
             SelectedRegionIndex = -1;
             StartEnabled = false;
             IvsuList = new ObservableCollection<SModel.Ivsu>();
-            InstallMode = "";
+            InstallMode = AppMan.App.InstallMode;
             RefreshUsb();
             SMapVersion = new ObservableCollection<string>();
             SVersion?.Clear();
             SMapVersion?.Clear();
             DriveDetailsVisible = SelectedDrive == null || SelectedDrive.Path?.Length == 0 ? Visibility.Hidden : Visibility.Visible;
-            ApplicationManager.Logger.Info($"Current Details - Region: {CurrentRegion} - Version: {CurrentVersion} - Navigation: {CurrentNav}");
+            AppMan.Logger.Info($"Current Details - Region: {CurrentRegion} - Version: {CurrentVersion} - Navigation: {CurrentNav}");
         }
 
         public void Init()
         {
             SelectedRegionIndex = -1;
-            ApplicationManager.Instance.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ApiSecret.Token);
+            AppMan.App.Client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ApiSecret.Token);
             SRegions = new ObservableCollection<SModel.SRegion>
             {
                 new SModel.SRegion {Code = "EU", Name = "Europe"},
@@ -320,7 +338,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             SVersionsEnabled = false;
         }
 
-        private void RegionInfoAction()
+        private static void RegionInfoAction()
         {
             Process.Start(Thread.CurrentThread.CurrentUICulture.TwoLetterISOLanguageName == "en"
                 ? "https://cyanlabs.net/api/Syn3Updater/region.php"
@@ -337,27 +355,27 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
             catch (XamlParseException e)
             {
                 ModernWpf.MessageBox.Show(e.GetFullMessage(), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Exclamation);
-                ApplicationManager.Logger.Info("ERROR: " + e.GetFullMessage());
+                AppMan.Logger.Info("ERROR: " + e.GetFullMessage());
             }
             catch (UnauthorizedAccessException e)
             {
                 ModernWpf.MessageBox.Show(e.GetFullMessage(), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Exclamation);
-                ApplicationManager.Logger.Info("ERROR: " + e.GetFullMessage());
+                AppMan.Logger.Info("ERROR: " + e.GetFullMessage());
             }
         }
 
         private void UpdateDriveInfo()
         {
             StartEnabled = SelectedRelease != null && SelectedRegion != null && SelectedMapVersion != null && SelectedDrive != null;
-            if (SelectedDrive?.Name == LanguageManager.GetValue("Home.NoUSBDir"))
+            if (SelectedDrive?.Name == LM.GetValue("Home.NoUSBDir"))
             {
                 VistaFolderBrowserDialog dialog = new VistaFolderBrowserDialog();
                 if (dialog.ShowDialog().GetValueOrDefault())
                 {
                     string destination = dialog.SelectedPath;
-                    if (ApplicationManager.Instance.DownloadPath.Contains(destination))
+                    if (AppMan.App.DownloadPath.Contains(destination))
                     {
-                        ModernWpf.MessageBox.Show(LanguageManager.GetValue("MessageBox.CancelDownloadIsFolder"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+                        ModernWpf.MessageBox.Show(LM.GetValue("MessageBox.CancelDownloadIsFolder"), "Syn3 Updater", MessageBoxButton.OK, MessageBoxImage.Exclamation);
                         ReloadSettings();
                     }
                     else
@@ -365,7 +383,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                         DriveLetter = destination + "\\";
                         DriveFileSystem = "";
                         DriveName = "";
-                        ApplicationManager.Instance.DriveName = SelectedDrive?.Name;
+                        AppMan.App.DriveName = SelectedDrive?.Name;
                         DriveDetailsVisible = Visibility.Visible;
                     }
                 }
@@ -375,10 +393,10 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 USBHelper.DriveInfo driveInfo = USBHelper.UpdateDriveInfo(SelectedDrive);
 
                 // Update app level vars
-                ApplicationManager.Instance.DriveFileSystem = driveInfo.FileSystem;
-                ApplicationManager.Instance.DrivePartitionType = driveInfo.PartitionType;
-                ApplicationManager.Instance.DriveName = SelectedDrive?.Name;
-                ApplicationManager.Instance.SkipFormat = driveInfo.SkipFormat;
+                AppMan.App.DriveFileSystem = driveInfo.FileSystem;
+                AppMan.App.DrivePartitionType = driveInfo.PartitionType;
+                AppMan.App.DriveName = SelectedDrive?.Name;
+                AppMan.App.SkipFormat = driveInfo.SkipFormat;
 
                 // Update local level vars
                 DriveLetter = driveInfo.Letter;
@@ -397,29 +415,15 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 SelectedMapVersion = null;
                 SelectedRelease = null;
                 SMapVersion.Clear();
-                string license = "";
-                if (ApplicationManager.Instance.Settings.LicenseKey?.Length > 10)
-                {
-                    license = "{\"licensekeys\":{\"_contains\":\"" + ApplicationManager.Instance.Settings.LicenseKey + "\"}},";
-                }
-                if (ApplicationManager.Instance.Settings.ShowAllReleases)
-                {
-                    _apiMapReleases = Api.MapReleasesConst.Replace("[published]", "filter={\"_and\":[{\"_or\":["+ license +"{\"licensekeys\":{\"_empty\":true}}]},{\"status\":{\"_in\":[\"private\",\"published\",\"testing\",\"archived\"]}},{\"regions\":{\"_in\":\"[regionplaceholder]\"}},{\"compatibility\":{\"_contains\":\"[compat]\"}}]}");
-                    _apiAppReleases = Api.AppReleasesConst.Replace("[published]", $"filter[key][_in]=public,v2,{ApplicationManager.Instance.Settings.LicenseKey}");
-                }
-                else
-                {
-                    _apiMapReleases = Api.MapReleasesConst.Replace("[published]", "filter={\"_and\":[{\"_or\":["+ license +"{\"licensekeys\":{\"_empty\":true}}]},{\"status\":{\"_in\":[\"private\",\"published\"]}},{\"regions\":{\"_in\":\"[regionplaceholder]\"}},{\"compatibility\":{\"_contains\":\"[compat]\"}}]}");
-                    _apiAppReleases = Api.AppReleasesConst.Replace("[published]",
-                        $"filter[status][_in]=published,private&filter[key][_in]=public,v2,{ApplicationManager.Instance.Settings.LicenseKey}");
-                }
+                _apiAppReleases = Api.AppReleasesConst.Replace("[published]",
+                    $"filter[status][_in]=published,private&filter[key][_in]=public,v2,{AppMan.App.Settings.LicenseKey}");
 
                 Stream _stringReleasesJson;
                 try
                 {
                     // however don't call ConfigureAwait(false) here or on any of it's friends below as you need this code to run on the previous context (ie the UI context)
                     // https://blog.stephencleary.com/2012/02/async-and-await.html#context
-                    HttpResponseMessage response = await ApplicationManager.Instance.Client.GetAsync(_apiAppReleases);
+                    HttpResponseMessage response = await AppMan.App.Client.GetAsync(_apiAppReleases);
                     _stringReleasesJson = await response.Content.ReadAsStreamAsync();
                 }
                 // ReSharper disable once RedundantCatchClause
@@ -429,22 +433,31 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                     //TODO Exception handling
                 }
 
-                if (!ApplicationManager.Instance.Settings.CurrentNav)
+                SVersion = new ObservableCollection<string>();
+
+                if (!AppMan.App.Settings.CurrentNav)
                 {
-                    SMapVersion.Add(LanguageManager.GetValue("String.NonNavAPIM"));
+                    SMapVersion.Add(LM.GetValue("String.NonNavAPIM"));
                 }
                 else
                 {
-                    if (ApplicationManager.Instance.Settings.CurrentVersion >= Api.ReformatVersion)
-                        SMapVersion.Add(LanguageManager.GetValue("String.KeepExistingMaps"));
+                    if (AppMan.App.Settings.CurrentVersion >= Api.ReformatVersion)
+                    {
+                        SMapVersion.Add(LM.GetValue("String.KeepExistingMaps"));
+                        if (AppMan.App.Settings.CurrentNav)
+                        {
+                            SVersion.Add(LM.GetValue("String.OnlyMaps"));
+                        }
+                    }
                 }
 
                 _jsonReleases = JsonHelpers.Deserialize<Api.JsonReleases>(_stringReleasesJson);
-                SVersion = new ObservableCollection<string>();
 
                 foreach (Api.Data item in _jsonReleases.Releases)
+                {
                     if (item.Regions.Contains(SelectedRegion.Code))
                         SVersion.Add(item.Name);
+                }
 
                 SVersionsEnabled = true;
                 StartEnabled = SelectedRelease != null && SelectedRegion != null && SelectedMapVersion != null && SelectedDrive != null;
@@ -453,42 +466,66 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
 
         private async Task UpdateSelectedRelease()
         {
+            string license = "";
+            if (AppMan.App.Settings.LicenseKey?.Length > 10)
+            {
+                license = "{\"licensekeys\":{\"_contains\":\"" + AppMan.App.Settings.LicenseKey + "\"}},";
+            }
+            _apiMapReleases = Api.MapReleasesConst.Replace("[published]", "filter={\"_and\":[{\"_or\":[" + license + "{\"licensekeys\":{\"_empty\":true}}]},{\"status\":{\"_in\":[\"private\",\"published\"]}},{\"regions\":{\"_in\":\"[regionplaceholder]\"}},[esn]{\"compatibility\":{\"_contains\":\"[compat]\"}}]}");
+
             if (SelectedRelease != "")
             {
                 SelectedMapVersion = null;
                 IvsuList.Clear();
-                foreach (Api.Data item in _jsonReleases.Releases)
-                    if (item.Name == SelectedRelease)
-                    {
-                        _stringCompatibility = item.Version.Substring(0, 3);
-                        if (item.Notes == null)
+                if (SelectedRelease == LM.GetValue("String.OnlyMaps"))
+                {
+                    _apiMapReleases = _apiMapReleases.Replace("[compat]", "3.4");
+                    _apiMapReleases = _apiMapReleases.Replace("[esn]", "{\"esn\": {\"_eq\": \"false\"}},");
+                }
+                else
+                {
+                    foreach (Api.Data item in _jsonReleases.Releases)
+                        if (item.Name == SelectedRelease)
                         {
-                            NotesVisibility = Visibility.Hidden;
-                            continue;
+                            _stringCompatibility = item.Version.Substring(0, 3);
+                            if (item.Notes == null)
+                            {
+                                NotesVisibility = Visibility.Hidden;
+                                continue;
+                            }
+
+                            NotesVisibility = Visibility.Visible;
+                            Notes = item.Notes.Replace("\n", Environment.NewLine);
                         }
 
-                        NotesVisibility = Visibility.Visible;
-                        Notes = item.Notes.Replace("\n", Environment.NewLine);
-                    }
+                    _apiMapReleases = _apiMapReleases.Replace("[compat]", _stringCompatibility);
+                    _apiMapReleases = _apiMapReleases.Replace("[esn]", "");
+                }
 
-                _apiMapReleases = _apiMapReleases.Replace("[compat]", _stringCompatibility);
                 _apiMapReleases = _apiMapReleases.Replace("[regionplaceholder]", SelectedRegion.Code);
 
-                HttpResponseMessage response = await ApplicationManager.Instance.Client.GetAsync(_apiMapReleases);
+                HttpResponseMessage response = await AppMan.App.Client.GetAsync(_apiMapReleases);
                 var _stringMapReleasesJson = await response.Content.ReadAsStreamAsync();
 
-                if (ApplicationManager.Instance.Settings.CurrentNav)
+                if (AppMan.App.Settings.CurrentNav)
                 {
                     SMapVersion.Clear();
-                    SMapVersion.Add(LanguageManager.GetValue("String.NoMaps"));
-                    if (ApplicationManager.Instance.Settings.CurrentNav)
+                    if (SelectedRelease != LM.GetValue("String.OnlyMaps"))
                     {
-                        if (ApplicationManager.Instance.Settings.CurrentVersion >= Api.ReformatVersion)
-                            SMapVersion.Add(LanguageManager.GetValue("String.KeepExistingMaps"));
+                        SMapVersion.Add(LM.GetValue("String.NoMaps"));
+                    }
+
+                    if (AppMan.App.Settings.CurrentNav)
+                    {
+                        if (AppMan.App.Settings.CurrentVersion >= Api.ReformatVersion)
+                            if (SelectedRelease != LM.GetValue("String.OnlyMaps"))
+                            {
+                                SMapVersion.Add(LM.GetValue("String.KeepExistingMaps"));
+                            }
                     }
                     else
                     {
-                        SMapVersion.Add(LanguageManager.GetValue("String.NonNavAPIM"));
+                        SMapVersion.Add(LM.GetValue("String.NonNavAPIM"));
                     }
 
                     _jsonMapReleases = JsonHelpers.Deserialize<Api.JsonReleases>(_stringMapReleasesJson);
@@ -507,77 +544,93 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                 IvsuList.Clear();
 
                 //LESS THAN 3.2
-                if (ApplicationManager.Instance.Settings.CurrentVersion < Api.ReformatVersion)
+                if (AppMan.App.Settings.CurrentVersion < Api.ReformatVersion)
                 {
-                    InstallMode = ApplicationManager.Instance.Settings.CurrentInstallMode == "autodetect" ? "reformat" : ApplicationManager.Instance.Settings.CurrentInstallMode;
+                    if (AppMan.App.Settings.My20)
+                    {
+                        InstallMode = "autoinstall";
+                    }
+                    if (!AppMan.App.ModeForced)
+                        InstallMode = "reformat";
                 }
 
                 //Above 3.2 and  Below 3.4.19274
-                else if (ApplicationManager.Instance.Settings.CurrentVersion >= Api.ReformatVersion &&
-                         ApplicationManager.Instance.Settings.CurrentVersion < Api.BlacklistedVersion)
+                else if (AppMan.App.Settings.CurrentVersion >= Api.ReformatVersion &&
+                         AppMan.App.Settings.CurrentVersion < Api.BlacklistedVersion)
                 {
                     //Update Nav?
-                    if (SelectedMapVersion == LanguageManager.GetValue("String.NoMaps") || SelectedMapVersion == LanguageManager.GetValue("String.NonNavAPIM") ||
-                        SelectedMapVersion == LanguageManager.GetValue("String.KeepExistingMaps"))
-                        InstallMode = ApplicationManager.Instance.Settings.CurrentInstallMode == "autodetect"
-                            ? "autoinstall"
-                            : ApplicationManager.Instance.Settings.CurrentInstallMode;
-                    else
-                        InstallMode = ApplicationManager.Instance.Settings.CurrentInstallMode == "autodetect"
-                            ? "reformat"
-                            : ApplicationManager.Instance.Settings.CurrentInstallMode;
+                    if (SelectedMapVersion == LM.GetValue("String.NoMaps") || SelectedMapVersion == LM.GetValue("String.NonNavAPIM") ||
+                        SelectedMapVersion == LM.GetValue("String.KeepExistingMaps"))
+                    {
+                        if (!AppMan.App.ModeForced)
+                            InstallMode = "autoinstall";
+                    }
+                    else if (AppMan.App.Settings.My20)
+                        InstallMode = "autoinstall";
+                    else if (!AppMan.App.ModeForced)
+                        InstallMode = "reformat";
                 }
 
                 //3.4.19274 or above
-                else if (ApplicationManager.Instance.Settings.CurrentVersion >= Api.BlacklistedVersion)
+                else if (AppMan.App.Settings.CurrentVersion >= Api.BlacklistedVersion)
                 {
                     //Update Nav?
-                    if (SelectedMapVersion == LanguageManager.GetValue("String.NoMaps") || SelectedMapVersion == LanguageManager.GetValue("String.NonNavAPIM") ||
-                        SelectedMapVersion == LanguageManager.GetValue("String.KeepExistingMaps"))
-                        InstallMode = ApplicationManager.Instance.Settings.CurrentInstallMode == "autodetect"
-                            ? "autoinstall"
-                            : ApplicationManager.Instance.Settings.CurrentInstallMode;
-                    else
-                        InstallMode = ApplicationManager.Instance.Settings.CurrentInstallMode == "autodetect"
-                            ? "downgrade"
-                            : ApplicationManager.Instance.Settings.CurrentInstallMode;
+                    if (SelectedMapVersion == LM.GetValue("String.NoMaps") || SelectedMapVersion == LM.GetValue("String.NonNavAPIM") ||
+                        SelectedMapVersion == LM.GetValue("String.KeepExistingMaps"))
+                    {
+                        if (!AppMan.App.ModeForced)
+                            InstallMode = "autoinstall";
+                    }
+                    else if (AppMan.App.Settings.My20)
+                        InstallMode = "autoinstall";
+                    else if (!AppMan.App.ModeForced)
+                        InstallMode = "downgrade";
                 }
 
-                ApplicationManager.Instance.Action = "main";
-                ApplicationManager.Instance.InstallMode = InstallMode;
+                AppMan.App.Action = "main";
+                AppMan.App.InstallMode = InstallMode;
 
-                string appReleaseSingle = ApplicationManager.Instance.Settings.CurrentNav
-                    ? Api.AppReleaseSingle.Replace("[navplaceholder]", "nav") + SelectedRelease
-                    : Api.AppReleaseSingle.Replace("[navplaceholder]", "nonnav") + SelectedRelease;
+                HttpResponseMessage response;
 
-                HttpResponseMessage response = await ApplicationManager.Instance.Client.GetAsync(appReleaseSingle);
-                var _stringDownloadJson = await response.Content.ReadAsStreamAsync();
+                if (SelectedRelease != LM.GetValue("String.OnlyMaps"))
+                {
+                    string appReleaseSingle = AppMan.App.Settings.CurrentNav
+                        ? Api.AppReleaseSingle.Replace("[navplaceholder]", "nav") + SelectedRelease
+                        : Api.AppReleaseSingle.Replace("[navplaceholder]", "nonnav") + SelectedRelease;
 
-                response = await ApplicationManager.Instance.Client.GetAsync(Api.MapReleaseSingle + SelectedMapVersion);
+                    response = await AppMan.App.Client.GetAsync(appReleaseSingle);
+                    var _stringDownloadJson = await response.Content.ReadAsStreamAsync();
+                    Api.JsonReleases jsonIvsUs = JsonHelpers.Deserialize<Api.JsonReleases>(_stringDownloadJson);
+
+                    foreach (Api.Ivsus item in jsonIvsUs.Releases[0].IvsusList)
+                        if (item.Ivsu.Regions.Contains("ALL") || item.Ivsu.Regions.Contains(SelectedRegion.Code))
+                        {
+                            IvsuList.Add(new SModel.Ivsu
+                            {
+                                Type = item.Ivsu.Type,
+                                Name = item.Ivsu.Name,
+                                Version = item.Ivsu.Version,
+                                Notes = item.Ivsu.Notes,
+                                Url = item.Ivsu.Url,
+                                Md5 = item.Ivsu.Md5,
+                                Selected = true,
+                                FileName = FileHelper.url_to_filename(item.Ivsu.Url),
+                                FileSize = item.Ivsu.FileSize
+                            });
+                        }
+                }
+                else
+                {
+                    InstallMode = "autoinstall";
+                    AppMan.App.InstallMode = InstallMode;
+                }
+
+                response = await AppMan.App.Client.GetAsync(Api.MapReleaseSingle + SelectedMapVersion);
                 var _stringMapDownloadJson = await response.Content.ReadAsStreamAsync();
-
-                Api.JsonReleases jsonIvsUs = JsonHelpers.Deserialize<Api.JsonReleases>(_stringDownloadJson);
                 Api.JsonReleases jsonMapIvsUs = JsonHelpers.Deserialize<Api.JsonReleases>(_stringMapDownloadJson);
 
-                foreach (Api.Ivsus item in jsonIvsUs.Releases[0].IvsusList)
-                    if (item.Ivsu.Regions.Contains("ALL") || item.Ivsu.Regions.Contains(SelectedRegion.Code))
-                    {
-                        string fileName = FileHelper.url_to_filename(item.Ivsu.Url);
-                        IvsuList.Add(new SModel.Ivsu
-                        {
-                            Type = item.Ivsu.Type,
-                            Name = item.Ivsu.Name,
-                            Version = item.Ivsu.Version,
-                            Notes = item.Ivsu.Notes,
-                            Url = item.Ivsu.Url,
-                            Md5 = item.Ivsu.Md5,
-                            Selected = true,
-                            FileName = fileName
-                        });
-                    }
-
-                if (SelectedMapVersion != LanguageManager.GetValue("String.NoMaps") && SelectedMapVersion != LanguageManager.GetValue("String.NonNavAPIM") &&
-                    SelectedMapVersion != LanguageManager.GetValue("String.KeepExistingMaps"))
+                if (SelectedMapVersion != LM.GetValue("String.NoMaps") && SelectedMapVersion != LM.GetValue("String.NonNavAPIM") &&
+                    SelectedMapVersion != LM.GetValue("String.KeepExistingMaps"))
                     foreach (Api.Ivsus item in jsonMapIvsUs.Releases[0].IvsusList)
                         if (item.MapIvsu.Regions.Contains("ALL") || item.MapIvsu.Regions.Contains(SelectedRegion.Code))
                         {
@@ -591,6 +644,7 @@ namespace Cyanlabs.Syn3Updater.UI.Tabs
                                 Md5 = item.MapIvsu.Md5,
                                 Selected = true,
                                 FileName = FileHelper.url_to_filename(item.MapIvsu.Url),
+                                FileSize = item.MapIvsu.FileSize,
                                 Source = item.MapIvsu.Source
                             });
                         }

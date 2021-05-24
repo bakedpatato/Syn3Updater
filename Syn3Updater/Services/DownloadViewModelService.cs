@@ -1,47 +1,72 @@
-﻿using Cyanlabs.Syn3Updater;
-using Cyanlabs.Syn3Updater.Model;
-using System;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Text;
+using Cyanlabs.Syn3Updater.Helper;
+using Cyanlabs.Syn3Updater.Model;
 
- namespace Cyanlabs.Updater.Services
+namespace Cyanlabs.Syn3Updater.Services
 {
     public static class DownloadViewModelService
     {
         public static StringBuilder CreateAutoInstallFile(string _selectedRelease, string _selectedRegion)
         {
-            var autoinstalllst = new StringBuilder(
-                $@"; CyanLabs Syn3Updater 2.x - Autoinstall Mode - {_selectedRelease} {_selectedRegion}{Environment.NewLine}{Environment.NewLine}[SYNCGen3.0_ALL_PRODUCT]{Environment.NewLine}");
+            var autoinstalllst = new StringBuilder($@"; CyanLabs Syn3Updater {Assembly.GetEntryAssembly()?.GetName().Version} {AppMan.App.LauncherPrefs.ReleaseTypeInstalled} - Autoinstall {(AppMan.App.ModeForced ? "FORCED " : "")}Mode - {_selectedRelease} {_selectedRegion}{Environment.NewLine}{Environment.NewLine}");
+            //naviextras not handled here 
+            var ivsuList = AppMan.App.Ivsus.Where(item => item.Source != "naviextras").ToList();
 
-            string extrafiles = "";
-            int baseint = 0, extraint = 0;
-            foreach (SModel.Ivsu item in ApplicationManager.Instance.Ivsus)
+            if (ivsuList.Any(i => i.Type == "MAP"))
             {
-                if (item.Source == "naviextras") 
-                    continue;
-                if (item.Type == "APPS" || item.Type == "VOICE" || item.Type == "ENH_DAB" || item.Type == "MAP_LICENSE" || item.Type == "VOICE_NAV" ||
-                     !ApplicationManager.Instance.AppsSelected)
-                {
-                    baseint++;
-                    autoinstalllst.Append($@"Item{baseint} = {item.Type} - {item.FileName}\rOpen{baseint} = SyncMyRide\{item.FileName}\r").Replace(@"\r", Environment.NewLine);
-                }
-                else if (ApplicationManager.Instance.AppsSelected)
-                {
-                    if (extrafiles?.Length == 0) extrafiles = $"[SYNCGen3.0_ALL]{Environment.NewLine}";
-                    if (extraint == 10)
-                    {
-                        extraint = 0;
-                        extrafiles += $@"Options = Delay,Include,Transaction{Environment.NewLine}[SYNCGen3.0_{ApplicationManager.Instance.SVersion}]{Environment.NewLine}";
-                    }
+                autoinstalllst.Append($@"[SYNCGen3.0_3.0.1_PRODUCT]{Environment.NewLine}");
+                var mapLicense = ivsuList.Find(i => i.Type == "MAP_LICENSE");
+                autoinstalllst.Append($@"Item1 = {mapLicense.Type} - {mapLicense.FileName}\rOpen1 = SyncMyRide\{mapLicense.FileName}\r").Replace(@"\r", Environment.NewLine);
+                ivsuList.Remove(mapLicense);
 
-                    extraint++;
-                    extrafiles += $@"Item{extraint} = {item.Type} - {item.FileName}\rOpen{extraint} = SyncMyRide\{item.FileName}\r".Replace(@"\r", Environment.NewLine);
+                List<uint> vals = ivsuList.ConvertAll(ivsu => (uint)ivsu.FileSize);
+                //splits the ivsus into 3 evenly distibuted buckets 
+                var buckets = new effPartition(vals, 3);
+                for (ushort i = 0; i < buckets.SubsetCount; i++)
+                {
+                    for(int j =0; j< buckets[i].NumbIDs.Count; j++ )
+                    {
+                        var subIndex = (int)buckets[i].numbIDs[j];
+                        //indexes for "Items" start at 1
+                        var partIndex = j+1;
+                        //indexes returned by the partition code start at 1 
+                        SModel.Ivsu item = ivsuList[subIndex - 1];
+                        if (i == 0) {
+                            //since we added the MAP_LICENCE package above 
+                            partIndex++;
+                        }
+                        autoinstalllst.Append($@"Item{partIndex} = {item.Type} - {item.FileName}\rOpen{partIndex} = SyncMyRide\{item.FileName}\r").Replace(@"\r", Environment.NewLine);
+                    }
+                    if (i == 0)
+                    {
+                        autoinstalllst.Append("Options = AutoInstall").Append(Environment.NewLine).Append(Environment.NewLine)
+                            .Append($@"[SYNCGen3.0_3.0.1]{Environment.NewLine}");
+                    }
+                    if (i == 1)
+                    {
+                        autoinstalllst.Append("Options = AutoInstall, Include, Transaction").Append(Environment.NewLine).Append(Environment.NewLine)
+                            .Append($@"[SYNCGen3.0_ALL]{Environment.NewLine}");
+                    }
+                    if (i == 2)
+                    {
+                        autoinstalllst.Append("Options = Delay, Include, Transaction").Append(Environment.NewLine);
+                    }
                 }
             }
-
-            if (extrafiles != "")
-                extrafiles += "Options = Delay,Include,Transaction";
-            autoinstalllst.Append("Options = AutoInstall").Append(Environment.NewLine)
-                .Append(extrafiles);
+            else
+            {
+                autoinstalllst.Append($@"[SYNCGen3.0_ALL_PRODUCT]{Environment.NewLine}");
+                for (int i = 0; i < ivsuList.Count; i++)
+                {
+                    var item = ivsuList[i];
+                    autoinstalllst.Append($@"Item{i + 1} = {item.Type} - {item.FileName}\rOpen{i + 1} = SyncMyRide\{item.FileName}\r").Replace(@"\r", Environment.NewLine);
+                }
+                autoinstalllst.Append("Options = AutoInstall").Append(Environment.NewLine);
+            }
             return autoinstalllst;
         }
     }

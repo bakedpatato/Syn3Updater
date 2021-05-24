@@ -24,7 +24,7 @@ namespace Cyanlabs.Launcher
         #endregion
 
         #region Methods
-        public async Task Execute(LauncherPrefs.ReleaseType releaseType, UpgradingWindow upgrading, string destFolder)
+        public async Task<bool> Execute(LauncherPrefs.ReleaseType releaseType, UpgradingWindow upgrading, string destFolder)
         {
             UpgradingWindow = upgrading;
             UpgradingWindow.Show();
@@ -71,7 +71,7 @@ namespace Cyanlabs.Launcher
             {
                 if (File.Exists("Syn3Updater.exe")) Process.Start("Syn3Updater.exe", "/launcher");
                 Application.Current.Shutdown();
-                return;
+                return false;
             }
 
             string version;
@@ -125,7 +125,7 @@ namespace Cyanlabs.Launcher
                 {
                     UpgradingWindow.Hide();
                     UpgradingWindow.Close();
-                }));         
+                }));
 
                 // Update settings to match new release version and branch
                 Core.LauncherPrefs.ReleaseInstalled = version;
@@ -136,9 +136,10 @@ namespace Cyanlabs.Launcher
                 if (!Directory.Exists(configFolderPath))
                     Directory.CreateDirectory(configFolderPath);
                 File.WriteAllText(configFolderPath + "\\LauncherPrefs.json", JsonConvert.SerializeObject(Core.LauncherPrefs));
-
+                return true;
             }
-           // end of If 'current version is less than new version OR current branch is different to new branch OR Syn3Updater.exe is missing'
+            return false;
+            // end of If 'current version is less than new version OR current branch is different to new branch OR Syn3Updater.exe is missing'
         }
 
         /// <summary>
@@ -175,7 +176,6 @@ namespace Cyanlabs.Launcher
                 }
                 catch
                 {
-
                 }
             }
 
